@@ -1,50 +1,54 @@
 import * as express from "express";
 import * as http from "http";
 import * as path from "path";
-import * as url from "url"
+import * as url from "url";
 import { v4 as uuidv4 } from "uuid";
 import { Server, Socket } from "socket.io";
 
 import { ServerConfiguration } from "./ServerConfiguration";
 import { HttpRequest, HttpResponse } from "../../common/src";
 import { Logger } from "./Logger";
+import { ClientHttpRequest } from "../../common/src/HttpRequest";
 
 const ERROR_NO_CONNECTION = "No socket connected";
 const MAX_LOGS_DEFAULT = 50;
 
 interface CallLog {
-  date: Date,
-  request?: HttpRequest,
-  response?: HttpResponse
+  date: Date;
+  request?: HttpRequest;
+  response?: HttpResponse;
 }
 
 interface State {
   client: {
-    connected: boolean
-  },
-  captureLogs: boolean,
-  version: string
+    connected: boolean;
+  };
+  captureLogs: boolean;
+  version: string;
 }
 
 export class RlayHttpServer {
-  socket: Socket | undefined = undefined;
+  socket: string | undefined = undefined;
 
-  private logs: CallLog[] = []
-  private maxLogs = MAX_LOGS_DEFAULT
-  private captureLogs = false
+  private logs: CallLog[] = [];
+  private maxLogs = MAX_LOGS_DEFAULT;
+  private captureLogs = false;
+  private sockets: Map<string, Socket> = new Map();
 
   constructor(private config: ServerConfiguration, private logger: Logger) {
     const server = this.createServer();
     server.listen(this.config.port.http, () => {
-      this.logger.info(`Listening for HTTP requests on ${this.config.port.http}`);
+      this.logger.info(
+        `Listening for HTTP requests on ${this.config.port.http}`
+      );
     });
   }
 
   private addCallLog(log: CallLog) {
     if (this.captureLogs) {
-      this.logs.push(log)
+      this.logs.push(log);
       while (this.logs.length > this.maxLogs) {
-        this.logs.shift()
+        this.logs.shift();
       }
     }
   }
@@ -53,82 +57,80 @@ export class RlayHttpServer {
     const app = express();
     const server = http.createServer(app);
     const io = new Server(server, {
-      maxHttpBufferSize: 1e15
+      maxHttpBufferSize: 1e15,
     });
     io.on("connection", this.handleNewConnection.bind(this));
-    app.use("/rlay", express.static(path.join(__dirname, "static")))
-    app.get("/rlay/calls", this.getCalls.bind(this))
-    app.delete("/rlay/calls", this.deleteCalls.bind(this))
-    app.get("/rlay/login", this.login.bind(this))
-    app.get("/rlay/state", this.getState.bind(this))
-    app.patch("/rlay/state", this.patchState.bind(this))
+    app.use("/rlay", express.static(path.join(__dirname, "static")));
+    app.get("/rlay/calls", this.getCalls.bind(this));
+    app.delete("/rlay/calls", this.deleteCalls.bind(this));
+    app.get("/rlay/login", this.login.bind(this));
+    app.get("/rlay/state", this.getState.bind(this));
+    app.patch("/rlay/state", this.patchState.bind(this));
     app.all("*", this.handleRequest.bind(this));
     return server;
   }
 
   private login(req: express.Request, res: express.Response) {
     if (req.headers["password"] !== this.config.password) {
-      res.statusCode = 403
-      res.send(JSON.stringify("Wrong password"))
-      return
+      res.statusCode = 403;
+      res.send(JSON.stringify("Wrong password"));
+      return;
     }
-    res.send('{"status": "success"}')
+    res.send('{"status": "success"}');
   }
 
   private getCalls(req: express.Request, res: express.Response) {
     if (req.headers["password"] !== this.config.password) {
-      res.statusCode = 403
-      res.send(JSON.stringify("Wrong password"))
-      return
+      res.statusCode = 403;
+      res.send(JSON.stringify("Wrong password"));
+      return;
     }
-    res.contentType("application/json")
-    res.write(JSON.stringify(this.logs, null, 2))
-    res.send()
+    res.contentType("application/json");
+    res.write(JSON.stringify(this.logs, null, 2));
+    res.send();
   }
 
   private deleteCalls(req: express.Request, res: express.Response) {
     if (req.headers["password"] !== this.config.password) {
-      res.statusCode = 403
-      res.send(JSON.stringify("Wrong password"))
-      return
+      res.statusCode = 403;
+      res.send(JSON.stringify("Wrong password"));
+      return;
     }
-    this.logs = []
-    res.send()
+    this.logs = [];
+    res.send();
   }
 
   private getState(req: express.Request, res: express.Response) {
     if (req.headers["password"] !== this.config.password) {
-      res.statusCode = 403
-      res.send(JSON.stringify("Wrong password"))
-      return
+      res.statusCode = 403;
+      res.send(JSON.stringify("Wrong password"));
+      return;
     }
-    res.contentType("application/json")
+    res.contentType("application/json");
     const state: State = {
       client: {
-        connected: this.socket !== undefined
+        connected: this.socket !== undefined,
       },
       captureLogs: this.captureLogs,
-      version: this.config.version
-    }
-    res.write(JSON.stringify(state, null, 2))
-    res.send()
+      version: this.config.version,
+    };
+    res.write(JSON.stringify(state, null, 2));
+    res.send();
   }
-
-
 
   private async patchState(req: express.Request, res: express.Response) {
     if (req.headers["password"] !== this.config.password) {
-      res.statusCode = 403
-      res.send(JSON.stringify("Wrong password"))
-      return
+      res.statusCode = 403;
+      res.send(JSON.stringify("Wrong password"));
+      return;
     }
 
-    const body = await this.getRequestBodyAsync(req, false)
-    const patchRequest = JSON.parse(body.toString()) as Partial<State>
+    const body = await this.getRequestBodyAsync(req, false);
+    const patchRequest = JSON.parse(body.toString()) as Partial<State>;
     if (patchRequest.captureLogs !== undefined) {
-      this.captureLogs = patchRequest.captureLogs
+      this.captureLogs = patchRequest.captureLogs;
     }
-    res.send("{}")
+    res.send("{}");
   }
 
   private handleNewConnection(newSocket: Socket) {
@@ -139,101 +141,134 @@ export class RlayHttpServer {
       newSocket.disconnect(true);
       return;
     }
-    if (this.socket !== undefined) {
-      this.logger.info(`Replacing old socket`);
-      this.socket.disconnect(true);
-    }
-    this.socket = newSocket;
-    this.logger.info("Connected");
-    this.socket.on("disconnect", (err) => {
-      this.logger.info(`Client disconnected: ${err}`);
+    const socketId = newSocket.id;
+    this.socket = newSocket.id;
+    this.forwardSocketIdToClientAsync(newSocket);
+    if (this.sockets.has(socketId)) {
+      this.logger.info(`Replacing old socket for client ${socketId}`);
+      const existingSocket = this.sockets.get(socketId);
+      existingSocket?.disconnect();
       this.socket = undefined;
+    }
+
+    this.socket = newSocket.id;
+    this.sockets.set(socketId, newSocket);
+    this.logger.info(`Connected client ${socketId}`);
+
+    this.logger.info("Connected");
+    newSocket.on("disconnect", (err) => {
+      this.logger.info(`Client disconnected: ${err}`);
+      this.sockets.delete(socketId);
     });
-    this.socket.on("error", (err) => {
-      this.logger.error(`Socket error: ${err}`)
-    })
+    newSocket.on("error", (err) => {
+      this.logger.error(`Socket error: ${err}`);
+    });
   }
 
   private handleRequest(req: express.Request, res: express.Response) {
-    this.logger.debug(`Received new request`)
+    let parsedUrl = url.parse(req.url, true);
+    let clientId = parsedUrl.query.clientId as string;
+    console.log("clientId", clientId);
+
+    this.logger.debug(`Received new request`);
     if (req.path.indexOf("socket.io") >= 0) {
-      this.logger.debug(`Socket connection - leaving that to socket.io`)
+      this.logger.debug(`Socket connection - leaving that to socket.io`);
       return;
     }
     const log: CallLog = {
       date: new Date(),
-    }
-    this.addCallLog(log)
+    };
+    this.addCallLog(log);
     this.getRequestBodyAsync(req)
       .then((body) => {
         const requestId = uuidv4();
-        const size = body.byteLength
-        const request: HttpRequest = {
+        const size = body.byteLength;
+        const request: ClientHttpRequest = {
           method: req.method,
           path: req.originalUrl,
           body: body.toString("base64"),
           headers: req.rawHeaders,
           id: requestId,
-          bodySize: size
+          bodySize: size,
+          clientId
         };
-        log.request = request
+        log.request = request;
         return request;
       })
       .then(this.forwardRequestToRlayClientAsync.bind(this))
       .then((response) => {
-        log.response = response
-        this.forwardResponseToCaller(response, res)
+        log.response = response;
+        this.forwardResponseToCaller(response, res);
       })
       .catch((error) => this.handleRlayClientError(error, res));
   }
 
-  private getRequestBodyAsync(req: express.Request, log = false): Promise<Buffer> {
+  private getRequestBodyAsync(
+    req: express.Request,
+    log = false
+  ): Promise<Buffer> {
     return new Promise((resolve) => {
-      log && this.logger.debug(`Collecting request body`)
+      log && this.logger.debug(`Collecting request body`);
       let body = Buffer.from([]);
       req.on("data", (chunk) => {
-        log && this.logger.debug(`Collected data for request body`)
-        body = Buffer.concat([body, chunk])
+        log && this.logger.debug(`Collected data for request body`);
+        body = Buffer.concat([body, chunk]);
       });
       req.on("end", () => {
-        log && this.logger.debug(`Request body complete`)
-        resolve(body)
+        log && this.logger.debug(`Request body complete`);
+        resolve(body);
       });
     });
   }
 
-  private forwardResponseToCaller(response: HttpResponse, res: express.Response) {
-    this.logger.debug(`Forwarding response to caller`)
+  private forwardResponseToCaller(
+    response: HttpResponse,
+    res: express.Response
+  ) {
+    this.logger.debug(`Forwarding response to caller`);
     this.copyHeaders(response, res);
     res.statusCode = response.statusCode;
     if (response.body) {
-      const responseBody = Buffer.from(response.body, "base64")
-      response.bodySize = responseBody.byteLength
+      const responseBody = Buffer.from(response.body, "base64");
+      response.bodySize = responseBody.byteLength;
       res.write(responseBody);
     }
     res.send();
-    this.logger.debug(`Done forwarding response`)
+    this.logger.debug(`Done forwarding response`);
   }
 
   private copyHeaders(response: HttpResponse, res: express.Response) {
-    this.logger.debug(`Copying headers`)
+    this.logger.debug(`Copying headers`);
     Object.keys(response.headers).forEach((key) => {
       res.setHeader(key, response.headers[key]);
     });
   }
 
-  private forwardRequestToRlayClientAsync(request: HttpRequest): Promise<HttpResponse> {
+  private forwardRequestToRlayClientAsync(
+    request: ClientHttpRequest
+  ): Promise<HttpResponse> {
     return new Promise((resolve, reject) => {
-      if (!this.socket) {
-        this.logger.error(`Tried to forward request, but no client connected`)
+      // if (!this.socket) {
+      //   this.logger.error(`Tried to forward request, but no client connected`);
+      //   return reject(Error(ERROR_NO_CONNECTION));
+      // }
+      // console.log("socket::: ", this.socket);
+      // console.log("sockets::: ", this.sockets);
+
+      console.log("request", request);
+
+      let socket = this.sockets.get(request.clientId ?? "");
+      if (socket) {
+        this.logger.info(`Transmitting request ${request.id}`);
+        socket.emit("request received", request);
+        socket.once(`response for ${request.id}`, (response: HttpResponse) => {
+          this.logger.info(`Received response`);
+          resolve(response);
+        });
+      } else {
+        this.logger.error(`Tried to forward request, but no client connected`);
         return reject(Error(ERROR_NO_CONNECTION));
       }
-      this.logger.info(`Transmitting request ${request.id}`);
-      this.socket.emit("request received", request);
-      this.socket.once(`response for ${request.id}`, (response: HttpResponse) => {
-        this.logger.info(`Received response`);
-        resolve(response);
-      });
     });
   }
 
@@ -250,5 +285,24 @@ export class RlayHttpServer {
       res.send(error);
       this.logger.error("Other error: " + error);
     }
+  }
+
+  private forwardSocketIdToClientAsync(
+    socket: Socket
+  ): Promise<HttpResponse | string> {
+    return new Promise((resolve, reject) => {
+      if (socket) {
+        socket.emit("socket id", socket.id);
+        socket.once(
+          `socket id for ${socket.id} received`,
+          (response: string) => {
+            this.logger.info(`Id response`);
+            resolve(response);
+          }
+        );
+      } else {
+        return reject(Error(ERROR_NO_CONNECTION));
+      }
+    });
   }
 }
