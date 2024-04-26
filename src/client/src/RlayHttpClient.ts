@@ -3,10 +3,13 @@ import { io, Socket } from "socket.io-client";
 import * as http from "http";
 import * as https from "https";
 import { ClientRequest, IncomingMessage, RequestOptions } from "http";
-import { HttpRequest, HttpResponse } from "../../common/src"
+import { HttpRequest, HttpResponse } from "../../common/src";
 
 interface Protocol {
-  request(options: RequestOptions, callback?: (res: IncomingMessage) => void): ClientRequest;
+  request(
+    options: RequestOptions,
+    callback?: (res: IncomingMessage) => void
+  ): ClientRequest;
 }
 
 export class RlayHttpClient {
@@ -15,14 +18,17 @@ export class RlayHttpClient {
 
   constructor(private config: Configuration) {
     const { relayHost, relayPort, password } = config;
-    const useHttps = config.https
+    const useHttps = config.https;
     if (config.https) {
-      console.log(`You chose HTTPS, to help with local development we will ignore invalid certificates. ` +
-        `This will generate a warning.`)
+      console.log(
+        `You chose HTTPS, to help with local development we will ignore invalid certificates. ` +
+          `This will generate a warning.`
+      );
       process.env["NODE_TLS_REJECT_UNAUTHORIZED"] = "0";
     }
-    this.protocol = useHttps ? https : http
+    this.protocol = useHttps ? https : http;
     this.socket = this.connect(relayHost, relayPort, password);
+
     this.socket.on("request received", this.processRequest.bind(this));
     this.socket.on(
       "incorrect password",
@@ -37,9 +43,10 @@ export class RlayHttpClient {
 
   private processUrl(relayHost: string, relayPort: number) {
     if (relayHost.startsWith("http://") || relayHost.startsWith("https://")) {
-      return `${relayHost}:${relayPort}`
+      return `${relayHost}:${relayPort}`;
     }
-    return `https://${relayHost}:${relayPort}`
+
+    return `https://${relayHost}:${relayPort}`;
   }
 
   private connect(
@@ -47,13 +54,17 @@ export class RlayHttpClient {
     relayPort: number,
     password: string
   ): Socket {
-
+   
     const url = this.processUrl(relayHost, relayPort);
     const socket = io(url, { auth: { password } });
+
     console.log(`Connecting HTTP to ${url}`);
     socket.on("connect", () => {
-      console.log(`Connected HTTP to ${url}`);
+      socket.on("socket id", (id: string) => {
+        console.log(`Connected HTTP to ${url}?clientId=${id}`);
+      });
     });
+   
     socket.on("disconnect", (reason: string) => {
       console.log(`Disconnected. Reason: ${reason}. Attempting reconnection`);
     });
@@ -63,7 +74,8 @@ export class RlayHttpClient {
   private processRequest(request: HttpRequest) {
     const date = new Date();
     process.stdout.write(
-      `${date.getHours()}:${date.getMinutes()} ${request.method} ${request.path
+      `${date.getHours()}:${date.getMinutes()} ${request.method} ${
+        request.path
       }: `
     );
     this.forwardRequestAsync(request)
@@ -71,6 +83,7 @@ export class RlayHttpClient {
       .then((response) => this.forwardResponse(request.id, response))
       .catch((error) => this.forwardError(request.id, error));
   }
+
 
   private forwardRequestAsync(request: HttpRequest): Promise<IncomingMessage> {
     return new Promise((resolve, reject) => {
@@ -90,17 +103,19 @@ export class RlayHttpClient {
         reject(err);
       });
       if (request.body) {
-        const body = Buffer.from(request.body, "base64")
+        const body = Buffer.from(request.body, "base64");
         req.write(body);
         if (this.config.outputBody) {
-          console.info(`\n===\nRequest ${request.id}: \n${body}\n`)
+          console.info(`\n===\nRequest ${request.id}: \n${body}\n`);
         }
       }
       req.end();
     });
   }
 
-  private processHttpResponseAsync(res: IncomingMessage): Promise<HttpResponse> {
+  private processHttpResponseAsync(
+    res: IncomingMessage
+  ): Promise<HttpResponse> {
     return new Promise((resolve) => {
       let body: Buffer = Buffer.from([]);
       res.on("data", (chunk) => {
@@ -120,7 +135,11 @@ export class RlayHttpClient {
 
   private forwardResponse(requestId: string, response: HttpResponse) {
     if (this.config.outputBody) {
-      console.info(`\n===\nResponse ${requestId}: Code: ${response.statusCode}, Body: ---\n${Buffer.from(response.body, "base64")}\n---\n`)
+      console.info(
+        `\n===\nResponse ${requestId}: Code: ${
+          response.statusCode
+        }, Body: ---\n${Buffer.from(response.body, "base64")}\n---\n`
+      );
     } else {
       console.log(response.statusCode);
     }
@@ -128,12 +147,12 @@ export class RlayHttpClient {
   }
 
   private forwardError(requestId: string, error: Error) {
-    const body = `Error in relay: ${error}`
+    const body = `Error in relay: ${error}`;
     const response: HttpResponse = {
       statusCode: 500,
       body: Buffer.from(body).toString("base64"),
       headers: {},
-      bodySize: body.length
+      bodySize: body.length,
     };
     console.log(response.statusCode);
     this.socket.emit(`response for ${requestId}`, response);
