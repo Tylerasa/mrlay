@@ -1,7 +1,7 @@
 {
-  "name": "rlay",
-  "version": "1.5.7",
-  "description": "Relay HTTP requests through a server to your dev machine. A self hosted alternative to ngrok",
+  "name": "mrlay",
+  "version": "1.0.0",
+  "description": "A fork of rlay, that allow for multiple socket connections.",
   "main": "src/server/dist/index.js",
   "engines": {
     "node": ">10.0.0"
@@ -17,7 +17,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.org/cfe84/rlay"
+    "url": "https://github.com/Tylerasa/mrlay"
   },
   "devDependencies": {
     "@types/command-line-usage": "^5.0.1",
@@ -45,10 +45,10 @@
     "yaclip": "^1.2.1"
   },
   "keywords": [],
-  "author": "Charles Feval",
+  "author": "Sylvester Asare Sarpong",
   "license": "ISC",
   "bin": {
-    "rlay": "./bin/rlay",
-    "rlay-server": "./bin/rlay-server"
+    "mrlay": "./bin/rlay",
+    "mrlay-server": "./bin/rlay-server"
   }
 }
